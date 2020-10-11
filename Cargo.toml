@@ -1,0 +1,19 @@
+[package]
+name = "curve_widget"
+version = "0.1.0"
+authors = ["Moritz Moeller <virtualritz@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+itertools = "0.9.0"
+cubic_spline = "0.9.3"
+tiny-skia = { git = "https://github.com/RazrFalcon/tiny-skia.git" }
+
+
+[profile.release]
+lto = "on"
+opt-level = 3
+codegen-units = 1
+rpath = true
+panic = "abort"
+#strip = "symbols"
