@@ -1,17 +1,17 @@
+#![feature(clamp)]
+
 use cubic_spline::*;
+use itertools::Itertools;
 use tiny_skia::*;
 
 fn main() {
-
     let (width, height) = (256, 256);
     let mut canvas = Canvas::from(Pixmap::new(width, height).unwrap());
 
     let mut cvs = vec![
         (0.0f64, 0.0),
-        (0.0, 0.0),
-        (0.3, 0.1),
-        (0.5, 0.8),
-        (1.0, 1.0),
+        (0.05, 0.1),
+        (0.5, 1.0),
         (1.0, 1.0),
     ];
 
@@ -103,8 +103,22 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
             cvs.iter()
                 .for_each(|cv| path_builder.line_to(cv.0 as f32, cv.1 as f32));
         } else {
+            let draw_cvs = cvs
+                .iter()
+                .enumerate()
+                .map(|cv| (cv.0 as f64, (cv.1).1))
+                .collect::<Vec<_>>();
+
+            let deltas = cvs
+                .iter()
+                .tuple_windows::<(_, _)>()
+                .map(|cv_tuple| (cv_tuple.1).0 - (cv_tuple.0).0)
+                .collect::<Vec<f64>>();
+
+            let mut index = 0usize;
+            let mut delta = 0.0;
             Spline::from_tuples(
-                cvs,
+                &draw_cvs,
                 &SplineOpts {
                     num_of_segments: canvas.pixmap.width() >> 3,
                     tension: basis.into(),
@@ -112,13 +126,21 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
                 },
             )
             .iter()
-            .for_each(|cv| path_builder.line_to(cv.0 as f32, cv.1 as f32));
+            .for_each(|cv| {
+                if cv.0 > (index + 1) as f64 {
+                    delta += deltas[index];
+                    index += 1;
+                }
+                let scale = deltas[index];
+                let pos_x = ((cv.0 - index as f64) * scale ) + delta;
+                path_builder.line_to(pos_x as f32, (cv.1 as f32).clamp(0., canvas.pixmap.height() as _));
+            });
         }
 
         path_builder.finish().unwrap()
     };
 
-    let stroked_path = path.stroke(curve_stroke).unwrap();
+    let stroked_path = path.stroke(&curve_stroke, 1.0).unwrap();
 
     canvas.fill_path(&stroked_path, &curve_paint, FillType::Winding);
 
@@ -131,6 +153,10 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
             6.0,
         );*/
         canvas.fill_path(&handle_path, &dot_fill, FillType::Winding);
-        canvas.fill_path(&handle_path.stroke(dot_stroke).unwrap(), &dot_paint, FillType::Winding);
+        canvas.fill_path(
+            &handle_path.stroke(&dot_stroke, 1.0).unwrap(),
+            &dot_paint,
+            FillType::Winding,
+        );
     });
 }
