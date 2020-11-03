@@ -1,8 +1,5 @@
-#![feature(clamp)]
-
-use cubic_spline::*;
-use itertools::Itertools;
 use tiny_skia::*;
+use uniform_cubic_splines::*;
 
 fn main() {
     let (width, height) = (256, 256);
@@ -10,17 +7,13 @@ fn main() {
 
     let mut cvs = vec![
         (0.0f64, 0.0),
-        (0.05, 0.1),
-        (0.5, 1.0),
+        (0.0, 0.0),
+        (0.1, 0.1),
+        (0.5, 0.8),
+        (0.6, 0.3),
+        (1.0, 1.0),
         (1.0, 1.0),
     ];
-
-    cvs.iter_mut().for_each(|cv| {
-        cv.0 = (cv.0 * canvas.pixmap.width() as f64).floor() + 0.5;
-        cv.1 = ((1.0 - cv.1) * canvas.pixmap.height() as f64).floor() + 0.5;
-
-        println!("{:?}", cv);
-    });
 
     let now = std::time::Instant::now();
     stroke_curve(&mut canvas, &cvs, Basis::CatmullRom);
@@ -97,66 +90,53 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
 
     let path = {
         let mut path_builder = PathBuilder::new();
-        path_builder.move_to(cvs.first().unwrap().0 as f32, cvs.first().unwrap().1 as f32);
+        path_builder.move_to(
+            0f32,
+            (1.0 - cvs[1].1) as f32 * (canvas.pixmap.height() as f32).floor() + 0.5,
+        );
 
         if Basis::Linear == basis {
             cvs.iter()
                 .for_each(|cv| path_builder.line_to(cv.0 as f32, cv.1 as f32));
         } else {
-            let draw_cvs = cvs
-                .iter()
-                .enumerate()
-                .map(|cv| (cv.0 as f64, (cv.1).1))
-                .collect::<Vec<_>>();
+            let knots = cvs.iter().map(|cv| cv.0).collect::<Vec<_>>();
+            let points = cvs.iter().map(|cv| cv.1).collect::<Vec<_>>();
 
-            let deltas = cvs
-                .iter()
-                .tuple_windows::<(_, _)>()
-                .map(|cv_tuple| (cv_tuple.1).0 - (cv_tuple.0).0)
-                .collect::<Vec<f64>>();
+            let segments = (canvas.pixmap.width() as usize >> 3) * (cvs.len() - 3);
 
-            let mut index = 0usize;
-            let mut delta = 0.0;
-            Spline::from_tuples(
-                &draw_cvs,
-                &SplineOpts {
-                    num_of_segments: canvas.pixmap.width() >> 3,
-                    tension: basis.into(),
-                    ..Default::default()
-                },
-            )
-            .iter()
-            .for_each(|cv| {
-                if cv.0 > (index + 1) as f64 {
-                    delta += deltas[index];
-                    index += 1;
-                }
-                let scale = deltas[index];
-                let pos_x = ((cv.0 - index as f64) * scale ) + delta;
-                path_builder.line_to(pos_x as f32, (cv.1 as f32).clamp(0., canvas.pixmap.height() as _));
-            });
+            let step = 1.0 / segments as f64;
+            let mut x = 0.0f64;
+            for i in 0..segments {
+                let v = spline_inverse::<basis::CatmullRom, _>(x, &knots).unwrap();
+
+                path_builder.line_to(
+                    (x * canvas.pixmap.width() as f64) as _,
+                    (1.0 - spline::<basis::CatmullRom, _, _>(v, &points)) as f32
+                        * canvas.pixmap.height() as f32,
+                );
+                x += step;
+            }
         }
 
         path_builder.finish().unwrap()
     };
 
-    let stroked_path = path.stroke(&curve_stroke, 1.0).unwrap();
-
-    canvas.fill_path(&stroked_path, &curve_paint, FillType::Winding);
+    canvas.stroke_path(&path, &curve_paint, &curve_stroke);
 
     cvs.iter().for_each(|cv| {
-        let handle_path = PathBuilder::from_circle(cv.0 as f32, cv.1 as f32, 5.5).unwrap();
+        let handle_path = PathBuilder::from_circle(
+            (cv.0 * canvas.pixmap.width() as f64) as _,
+            ((1.0 - cv.1) * canvas.pixmap.height() as f64) as _,
+            5.5,
+        )
+        .unwrap();
         /*
         let diamond_path = stroke_diamond(
             cv.0 as f32,
             cv.1 as f32,
             6.0,
         );*/
-        canvas.fill_path(&handle_path, &dot_fill, FillType::Winding);
-        canvas.fill_path(
-            &handle_path.stroke(&dot_stroke, 1.0).unwrap(),
-            &dot_paint,
-            FillType::Winding,
-        );
+        canvas.fill_path(&handle_path, &dot_fill, FillRule::Winding);
+        canvas.stroke_path(&handle_path, &dot_paint, &dot_stroke);
     });
 }
