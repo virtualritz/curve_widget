@@ -3,12 +3,14 @@ use uniform_cubic_splines::*;
 
 fn main() {
     let (width, height) = (256, 256);
-    let mut canvas = Canvas::from(Pixmap::new(width, height).unwrap());
+    let mut pixmap = Pixmap::new(width, height).unwrap();
 
     let mut cvs = vec![
         (0.0f64, 0.0),
         (0.0, 0.0),
         (0.1, 0.1),
+        (0.5, 0.8),
+        (0.5, 0.8),
         (0.5, 0.8),
         (0.6, 0.3),
         (1.0, 1.0),
@@ -16,14 +18,14 @@ fn main() {
     ];
 
     let now = std::time::Instant::now();
-    stroke_curve(&mut canvas, &cvs, Basis::CatmullRom);
+    stroke_curve(&mut pixmap, &cvs, Basis::CatmullRom);
 
     println!(
         "Rendered in {:.2}ms",
         now.elapsed().as_micros() as f64 / 1000.0
     );
 
-    canvas.pixmap.save_png("image.png").unwrap();
+    pixmap.save_png("image.png").unwrap();
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
@@ -67,7 +69,7 @@ fn stroke_diamond(x: f32, y: f32, r: f32) -> Path {
 
 struct CurveColors {}
 
-fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
+fn stroke_curve(pixmap: &mut Pixmap, cvs: &Vec<(f64, f64)>, basis: Basis) {
     let mut curve_paint = Paint::default();
     curve_paint.set_color(Color::from_rgba(1.0, 1.0, 1.0, 1.0).unwrap());
     curve_paint.anti_alias = true;
@@ -92,7 +94,7 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
         let mut path_builder = PathBuilder::new();
         path_builder.move_to(
             0f32,
-            (1.0 - cvs[1].1) as f32 * (canvas.pixmap.height() as f32).floor() + 0.5,
+            (1.0 - cvs[1].1) as f32 * (pixmap.height() as f32).floor() + 0.5,
         );
 
         if Basis::Linear == basis {
@@ -102,7 +104,7 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
             let knots = cvs.iter().map(|cv| cv.0).collect::<Vec<_>>();
             let points = cvs.iter().map(|cv| cv.1).collect::<Vec<_>>();
 
-            let segments = (canvas.pixmap.width() as usize >> 3) * (cvs.len() - 3);
+            let segments = (pixmap.width() as usize >> 3) * (cvs.len() - 3);
 
             let step = 1.0 / segments as f64;
             let mut x = 0.0f64;
@@ -110,9 +112,9 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
                 let v = spline_inverse::<basis::CatmullRom, _>(x, &knots).unwrap();
 
                 path_builder.line_to(
-                    (x * canvas.pixmap.width() as f64) as _,
+                    (x * pixmap.width() as f64) as _,
                     (1.0 - spline::<basis::CatmullRom, _, _>(v, &points)) as f32
-                        * canvas.pixmap.height() as f32,
+                        * pixmap.height() as f32,
                 );
                 x += step;
             }
@@ -121,12 +123,12 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
         path_builder.finish().unwrap()
     };
 
-    canvas.stroke_path(&path, &curve_paint, &curve_stroke);
+    pixmap.stroke_path(&path, &curve_paint, &curve_stroke, Transform::identity(), None);
 
     cvs.iter().for_each(|cv| {
         let handle_path = PathBuilder::from_circle(
-            (cv.0 * canvas.pixmap.width() as f64) as _,
-            ((1.0 - cv.1) * canvas.pixmap.height() as f64) as _,
+            (cv.0 * pixmap.width() as f64) as _,
+            ((1.0 - cv.1) * pixmap.height() as f64) as _,
             5.5,
         )
         .unwrap();
@@ -136,7 +138,7 @@ fn stroke_curve(canvas: &mut Canvas, cvs: &Vec<(f64, f64)>, basis: Basis) {
             cv.1 as f32,
             6.0,
         );*/
-        canvas.fill_path(&handle_path, &dot_fill, FillRule::Winding);
-        canvas.stroke_path(&handle_path, &dot_paint, &dot_stroke);
+        pixmap.fill_path(&handle_path, &dot_fill, FillRule::Winding, Transform::identity(), None);
+        pixmap.stroke_path(&handle_path, &dot_paint, &dot_stroke, Transform::identity(), None);
     });
 }
